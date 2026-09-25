@@ -193,6 +193,13 @@
       (phone, computer, speaker). Requires Spotify Premium.
     </p>
     <button class="btn" onclick="startAuth()">Connect to Spotify</button>
+    <p style="font-size:12px;color:#999999;margin:16px 0 6px 0;line-height:1.5;">
+      Can't log in on this device? Log in on a computer, tap "Show link" under
+      "Transfer login" there, and open that link here. Or paste the token below.
+    </p>
+    <input id="tokenInput" type="text" placeholder="Paste token"
+      style="width:100%;padding:10px;border-radius:6px;border:1px solid #444444;background:#111111;color:#f5f5f5;font-size:14px;">
+    <button class="btn btn-secondary" style="margin-top:8px;" onclick="importTokenFromInput()">Use token</button>
   </div>
 
   <div id="player" class="hidden">
@@ -240,6 +247,16 @@
         <button class="btn btn-small btn-secondary" onclick="loadPlaylists()">Refresh</button>
       </div>
       <div id="playlistList"></div>
+    </div>
+
+    <div class="card">
+      <div class="row row-between">
+        <label class="small" style="margin-bottom:0;">Transfer login</label>
+        <button class="btn btn-small btn-secondary" onclick="showTransferLink()">Show link</button>
+      </div>
+      <textarea id="transferLink" class="hidden" readonly rows="5" onclick="this.select()"
+        style="width:100%;margin-top:10px;padding:10px;border-radius:6px;border:1px solid #444444;background:#111111;color:#f5f5f5;font-size:12px;"></textarea>
+      <div class="device-meta" style="margin-top:6px;">Open this link on another device to sign it in. Treat it like a password.</div>
     </div>
 
     <button class="btn btn-secondary" onclick="logOut()">Log out</button>
@@ -465,6 +482,47 @@ function handleAuthRedirect() {
       }
     });
   return true;
+}
+
+/* Login transfer: old browsers (iOS 9 Safari) can't render Spotify's login page.
+   Log in on a modern device, then carry the refresh token over via a link like
+   <page>#rt=<token>, or paste it into the box. The token only ever lives in the
+   URL fragment (never sent to a server) and is stripped from the address bar. */
+function importRefreshToken(rt) {
+  rt = (rt || '').replace(/^\s+|\s+$/g, '');
+  if (!rt) { return false; }
+  localStorage.setItem('sp_refresh_token', rt);
+  localStorage.removeItem('sp_access_token');
+  localStorage.removeItem('sp_expires_at');
+  return true;
+}
+
+function handleHashImport() {
+  var m = window.location.hash.match(/[#&]rt=([^&]+)/);
+  if (!m) { return false; }
+  window.history.replaceState({}, document.title, REDIRECT_URI);
+  return importRefreshToken(decodeURIComponent(m[1]));
+}
+
+function importTokenFromInput() {
+  var v = document.getElementById('tokenInput').value;
+  var m = v.match(/[#&]rt=([^&\s]+)/);
+  if (m) { v = decodeURIComponent(m[1]); }
+  if (importRefreshToken(v)) {
+    setStatus('');
+    showPlayer();
+  } else {
+    setStatus('Paste a token or transfer link first.');
+  }
+}
+
+function showTransferLink() {
+  var rt = localStorage.getItem('sp_refresh_token');
+  if (!rt) { setStatus('No login to transfer.'); return; }
+  var box = document.getElementById('transferLink');
+  box.value = REDIRECT_URI + '#rt=' + encodeURIComponent(rt);
+  box.className = '';
+  box.select();
 }
 
 function saveTokens(data) {
@@ -722,6 +780,7 @@ function startPolling() {
   }
 
   var handledRedirect = handleAuthRedirect();
+  if (!handledRedirect) { handleHashImport(); }
   if (!handledRedirect) {
     var token = localStorage.getItem('sp_access_token');
     var refreshToken = localStorage.getItem('sp_refresh_token');
